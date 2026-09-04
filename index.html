@@ -1,0 +1,1537 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no">
+<title>City Trace Map — Field Research</title>
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css" />
+
+<style>
+/* ==========================================================================
+   City Trace Map — self-contained field research map
+   Admin password is hardcoded below (search ADMIN_PASSWORD). Change before use.
+   ========================================================================== */
+:root{
+  --bg:#0b0d10;
+  --panel:#14171c;
+  --panel-2:#1b1f26;
+  --border:#2a2f38;
+  --text:#e8eaed;
+  --text-dim:#9aa0a8;
+  --accent:#4fc3f7;
+  --accent-2:#ff5c5c;
+  --myki:#2ecc71;
+  --cctv:#e74c3c;
+  --pedestrian:#f39c12;
+  --jcdecaux:#9b59b6;
+  --wifi:#3498db;
+  --walking:#ecf0f1;
+  --tram:#2ecc71;
+  --train:#3498db;
+  --other-mode:#f39c12;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+*{box-sizing:border-box;}
+/* The hidden attribute must win over any component's own `display` rule (flex, grid, etc.) */
+[hidden]{ display:none !important; }
+html,body{
+  margin:0; padding:0; height:100%; width:100%;
+  background:var(--bg); color:var(--text); overflow:hidden;
+}
+#map{ position:fixed; inset:0; background:#0b0d10; z-index:1; }
+
+/* ---------------- Password modal ---------------- */
+.modal-overlay{
+  position:fixed; inset:0; background:rgba(5,6,8,0.92);
+  display:flex; align-items:center; justify-content:center; z-index:1000;
+  padding:20px;
+}
+.modal-card{
+  background:var(--panel); border:1px solid var(--border); border-radius:12px;
+  padding:28px 26px; width:100%; max-width:380px; box-shadow:0 20px 60px rgba(0,0,0,0.5);
+}
+.modal-card h1{ font-size:19px; margin:0 0 4px; letter-spacing:0.3px; }
+.modal-card p.sub{ color:var(--text-dim); font-size:13px; margin:0 0 20px; line-height:1.5;}
+.modal-card input[type=password], .modal-card input[type=text], .modal-card textarea{
+  width:100%; padding:10px 12px; border-radius:8px; border:1px solid var(--border);
+  background:var(--panel-2); color:var(--text); font-size:14px; margin-bottom:10px;
+}
+.btn{
+  appearance:none; border:1px solid var(--border); background:var(--panel-2); color:var(--text);
+  padding:10px 14px; border-radius:8px; font-size:13.5px; cursor:pointer; font-weight:500;
+  transition:background .15s, border-color .15s;
+}
+.btn:hover{ background:#232833; border-color:#3a4150; }
+.btn-primary{ background:var(--accent); border-color:var(--accent); color:#04202b; font-weight:700; }
+.btn-primary:hover{ background:#6fd0ff; }
+.btn-danger{ background:#3a1414; border-color:#5c1f1f; color:#ff9a9a; }
+.btn-danger:hover{ background:#4a1a1a; }
+.btn-block{ width:100%; }
+.btn-sm{ padding:6px 10px; font-size:12.5px; }
+.row{ display:flex; gap:8px; }
+.row > .btn{ flex:1; }
+.error-text{ color:var(--accent-2); font-size:12.5px; margin:-4px 0 10px; min-height:1em; }
+
+/* ---------------- Top bar ---------------- */
+#topbar{
+  position:fixed; top:0; left:0; right:0; height:52px; z-index:500;
+  background:linear-gradient(to bottom, rgba(11,13,16,0.92), rgba(11,13,16,0.0));
+  display:flex; align-items:center; padding:0 12px; gap:10px; pointer-events:none;
+}
+#topbar > *{ pointer-events:auto; }
+#app-title{ font-size:14px; font-weight:700; letter-spacing:0.4px; color:var(--text); display:flex; align-items:center; gap:8px;
+  background:rgba(20,23,28,0.85); border:1px solid var(--border); padding:8px 12px; border-radius:8px; backdrop-filter:blur(6px);}
+#app-title .dot{ width:8px; height:8px; border-radius:50%; background:var(--accent); }
+#mode-badge{ font-size:11px; padding:3px 8px; border-radius:20px; font-weight:700; letter-spacing:0.5px; text-transform:uppercase; }
+.mode-admin{ background:#3a2410; color:#ffb74d; border:1px solid #5a3a1a; }
+.mode-viewer{ background:#0f2a1f; color:#66d19e; border:1px solid #1a4a35; }
+#topbar-actions{ margin-left:auto; display:flex; gap:8px; }
+
+/* ---------------- Sidebar (shared shell) ---------------- */
+.sidebar{
+  position:fixed; top:0; bottom:0; left:0; width:340px; max-width:88vw;
+  background:var(--panel); border-right:1px solid var(--border); z-index:600;
+  display:flex; flex-direction:column; transform:translateX(0);
+  transition:transform .22s ease; box-shadow:8px 0 30px rgba(0,0,0,0.35);
+}
+.sidebar.collapsed{ transform:translateX(-100%); }
+.sidebar-header{
+  padding:14px 16px 10px; border-bottom:1px solid var(--border); flex-shrink:0;
+  padding-top:60px;
+}
+.sidebar-body{ flex:1; overflow-y:auto; padding:14px 16px 90px; }
+.sidebar-toggle{
+  position:fixed; top:60px; z-index:601; left:340px; width:30px; height:44px;
+  background:var(--panel); border:1px solid var(--border); border-left:none;
+  border-radius:0 8px 8px 0; color:var(--text); cursor:pointer; display:flex;
+  align-items:center; justify-content:center; transition:left .22s ease; font-size:14px;
+}
+.sidebar.collapsed + .sidebar-toggle{ left:0; }
+
+.field-label{ display:block; font-size:11.5px; text-transform:uppercase; letter-spacing:0.5px; color:var(--text-dim); margin:14px 0 6px; font-weight:700; }
+.field-label:first-child{ margin-top:0; }
+select, input[type=text], input[type=color], input[type=file], textarea{
+  width:100%; padding:9px 10px; border-radius:8px; border:1px solid var(--border);
+  background:var(--panel-2); color:var(--text); font-size:13.5px; font-family:inherit;
+}
+textarea{ resize:vertical; min-height:70px; }
+input[type=color]{ padding:3px; height:38px; cursor:pointer; }
+
+/* Tool tabs (admin) */
+.tool-tabs{ display:flex; gap:6px; padding:8px 16px 0; padding-top:60px; }
+.tool-tab{
+  flex:1; text-align:center; padding:9px 6px; border-radius:8px; border:1px solid var(--border);
+  background:var(--panel-2); color:var(--text-dim); cursor:pointer; font-size:12.5px; font-weight:700;
+}
+.tool-tab.active{ background:rgba(79,195,247,0.12); border-color:var(--accent); color:var(--accent); }
+
+.datafile-bar{
+  display:flex; align-items:center; gap:8px; margin:10px 16px 0; padding:8px 10px;
+  border:1px solid var(--border); border-radius:8px; background:var(--panel-2); font-size:11.5px;
+}
+.datafile-dot{ width:8px; height:8px; border-radius:50%; background:#6a7280; flex-shrink:0; }
+.datafile-dot.connected{ background:#2ecc71; }
+.datafile-dot.needs-permission{ background:#f39c12; }
+.datafile-dot.unsupported{ background:#6a7280; }
+.datafile-status{ flex:1; color:var(--text-dim); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.datafile-bar .btn{ flex-shrink:0; }
+
+.hint{ font-size:12px; color:var(--text-dim); line-height:1.5; background:var(--panel-2); border:1px solid var(--border); padding:10px; border-radius:8px; }
+
+.seg-item, .marker-item{
+  display:flex; align-items:center; gap:8px; padding:8px 9px; border-radius:8px;
+  border:1px solid var(--border); background:var(--panel-2); margin-bottom:6px; font-size:12.5px; cursor:pointer;
+}
+.seg-item:hover, .marker-item:hover{ border-color:#3a4150; }
+.swatch{ width:14px; height:14px; border-radius:4px; flex-shrink:0; border:1px solid rgba(255,255,255,0.2); }
+.dotcat{ width:12px; height:12px; border-radius:50%; flex-shrink:0; border:1px solid rgba(255,255,255,0.25); }
+.seg-item .meta{ flex:1; min-width:0; }
+.seg-item .meta .t1{ font-weight:600; }
+.seg-item .meta .t2{ color:var(--text-dim); font-size:11px; }
+
+.photo-preview{
+  width:100%; height:120px; object-fit:cover; border-radius:8px; border:1px solid var(--border);
+  background:var(--panel-2); margin-top:0; display:block;
+}
+.photo-drop{
+  margin-top:6px; border:1.5px dashed var(--border); border-radius:8px; cursor:pointer;
+  background:var(--panel-2); transition:border-color .15s, background .15s;
+}
+.photo-drop:hover, .photo-drop:focus{ border-color:var(--accent); outline:none; background:#1d2229; }
+.photo-drop-placeholder{ padding:16px 12px; text-align:center; color:var(--text-dim); font-size:12px; line-height:1.5; }
+.form-actions{ display:flex; gap:8px; margin-top:16px; }
+
+/* ---------------- Legend (viewer) ---------------- */
+.legend-block{ margin-bottom:18px; }
+.legend-title{ font-size:11.5px; text-transform:uppercase; letter-spacing:0.5px; color:var(--text-dim); font-weight:700; margin-bottom:8px; }
+.legend-row{ display:flex; align-items:center; gap:9px; padding:5px 0; font-size:13px; }
+.legend-line{ width:22px; height:4px; border-radius:2px; flex-shrink:0; }
+
+.group-header{
+  font-size:12px; font-weight:700; color:var(--text-dim); text-transform:uppercase; letter-spacing:0.4px;
+  margin:16px 0 8px; padding-bottom:6px; border-bottom:1px solid var(--border);
+  display:flex; align-items:center; gap:8px;
+}
+.group-header:first-child{ margin-top:0; }
+
+/* ---------------- Marker divIcon ---------------- */
+.leaflet-div-icon{ background:transparent !important; border:none !important; }
+.pin{
+  width:28px; height:28px; border-radius:50% 50% 50% 0; transform:rotate(-45deg);
+  display:flex; align-items:center; justify-content:center; border:2px solid rgba(255,255,255,0.85);
+  box-shadow:0 2px 6px rgba(0,0,0,0.5);
+}
+.pin .pin-icon{ transform:rotate(45deg); font-size:13px; line-height:1; }
+.vertex-handle{
+  width:12px; height:12px; border-radius:50%; background:#fff; border:2px solid #222;
+  box-shadow:0 1px 4px rgba(0,0,0,0.6);
+}
+
+/* ---------------- Start/end sign chips + pins ---------------- */
+.sign-chips{ display:flex; gap:8px; }
+.sign-chip{
+  flex:1; text-align:center; padding:9px 8px; border-radius:8px; border:1.5px dashed var(--border);
+  background:var(--panel-2); color:var(--text); cursor:grab; font-size:13px; font-weight:600;
+  user-select:none;
+}
+.sign-chip:active{ cursor:grabbing; }
+.sign-chip.placed{ border-style:solid; }
+.sign-chip-start.placed{ border-color:#2ecc71; }
+.sign-chip-end.placed{ border-color:#e74c3c; }
+.sign-pin{
+  width:34px; height:34px; border-radius:50%; display:flex; align-items:center; justify-content:center;
+  font-size:17px; border:2px solid rgba(255,255,255,0.9); box-shadow:0 2px 8px rgba(0,0,0,0.55);
+  cursor:pointer;
+}
+.sign-pin-start{ background:#1e6b3e; }
+.sign-pin-end{ background:#7a1f1f; }
+
+/* ---------------- Popup ---------------- */
+.leaflet-popup-content-wrapper{ background:#181c22; color:var(--text); border-radius:10px; }
+.leaflet-popup-tip{ background:#181c22; }
+.leaflet-popup-content{ margin:12px 14px; }
+.popup-card{ width:220px; }
+.popup-card .p-title{ font-weight:700; font-size:14px; margin-bottom:2px; }
+.popup-card .p-type{ font-size:11px; font-weight:700; letter-spacing:0.4px; text-transform:uppercase; margin-bottom:6px; opacity:0.9; }
+.popup-card .p-operator{ font-size:12px; color:var(--text-dim); margin-bottom:6px; }
+.popup-card .p-desc{ font-size:12.5px; line-height:1.45; margin-bottom:8px; }
+.popup-card img{ width:100%; border-radius:6px; display:block; max-height:130px; object-fit:cover; }
+.popup-card .p-actions{ display:flex; gap:6px; margin-top:8px; }
+
+/* ---------------- Export/Import modal ---------------- */
+#data-modal .modal-card{ max-width:640px; }
+#data-modal textarea{ width:100%; height:320px; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:11.5px; }
+.tabbar{ display:flex; gap:6px; margin-bottom:12px; }
+.tabbar .btn{ flex:1; }
+.tabbar .btn.active{ background:rgba(79,195,247,0.12); border-color:var(--accent); color:var(--accent); }
+.panel-pane[hidden]{ display:none; }
+
+/* ---------------- Toast ---------------- */
+#toast{
+  position:fixed; bottom:20px; left:50%; transform:translateX(-50%) translateY(20px);
+  background:#181c22; border:1px solid var(--border); color:var(--text); padding:10px 16px;
+  border-radius:8px; font-size:13px; z-index:2000; opacity:0; transition:opacity .2s, transform .2s;
+  pointer-events:none; box-shadow:0 10px 30px rgba(0,0,0,0.4);
+}
+#toast.show{ opacity:1; transform:translateX(-50%) translateY(0); }
+
+/* ---------------- Mobile ---------------- */
+#topbar-actions .btn span.short{ display:none; }
+@media (max-width: 680px){
+  .sidebar{ width:88vw; }
+  .sidebar-toggle{ left:88vw; }
+  #app-title span.full{ display:none; }
+  #topbar-actions .btn span.full{ display:none; }
+  #topbar-actions .btn span.short{ display:inline; }
+}
+</style>
+</head>
+<body>
+
+<div id="map"></div>
+
+<!-- ================= Password / entry modal ================= -->
+<div class="modal-overlay" id="entry-modal">
+  <div class="modal-card">
+    <h1>City Trace Map</h1>
+    <p class="sub">Surveillance &amp; tracking infrastructure field survey. Enter the admin password to edit the route and data points, or continue as a viewer to see the published map.</p>
+    <input type="password" id="password-input" placeholder="Admin password" autocomplete="off">
+    <div class="error-text" id="password-error"></div>
+    <div class="row">
+      <button class="btn" id="viewer-btn">View map</button>
+      <button class="btn btn-primary" id="admin-btn">Enter admin</button>
+    </div>
+  </div>
+</div>
+
+<!-- ================= Top bar ================= -->
+<div id="topbar" hidden>
+  <div id="app-title"><span class="dot"></span><span class="full">City Trace Map</span> <span id="mode-badge" class="mode-viewer">Viewer</span></div>
+  <div id="topbar-actions"></div>
+</div>
+
+<!-- ================= Admin sidebar ================= -->
+<div class="sidebar" id="admin-sidebar" hidden>
+  <div class="tool-tabs">
+    <div class="tool-tab active" id="tab-route">Route builder</div>
+    <div class="tool-tab" id="tab-marker">Marker tool</div>
+  </div>
+  <div class="datafile-bar" id="datafile-bar">
+    <span class="datafile-dot" id="datafile-dot"></span>
+    <span class="datafile-status" id="datafile-status">Not connected</span>
+    <button class="btn btn-sm" id="datafile-connect-btn">Connect</button>
+    <button class="btn btn-sm" id="datafile-new-btn" title="Create a new data.json to save to">New</button>
+  </div>
+  <div class="sidebar-body">
+
+    <!-- Route builder pane -->
+    <div id="pane-route">
+      <span class="field-label">Transport mode</span>
+      <select id="mode-select">
+        <option value="walking">Walking</option>
+        <option value="tram">Tram</option>
+        <option value="train">Train</option>
+        <option value="other">Other</option>
+      </select>
+
+      <span class="field-label">Segment colour</span>
+      <input type="color" id="mode-color">
+
+      <div class="hint" style="margin-top:14px;">Click the map to place vertices for the current segment. <strong>Double-click</strong> to finish the segment. Drag any white vertex dot to adjust the route. Start a new segment any time by clicking the map again.</div>
+
+      <button class="btn btn-block" id="finish-segment-btn" style="margin-top:12px;">Finish current segment</button>
+      <button class="btn btn-danger btn-block" id="delete-last-segment-btn" style="margin-top:8px;">Delete last segment</button>
+
+      <span class="field-label">Segments (<span id="segment-count">0</span>)</span>
+      <div id="segment-list"></div>
+
+      <span class="field-label">Route start / end signs</span>
+      <div class="hint" style="margin-bottom:10px;">Drag a sign onto the map to place it. Drag it again to move it. Click a placed sign on the map to remove it.</div>
+      <div class="sign-chips">
+        <div class="sign-chip sign-chip-start" id="sign-chip-start" draggable="true">🚩 Start</div>
+        <div class="sign-chip sign-chip-end" id="sign-chip-end" draggable="true">🏁 Finish</div>
+      </div>
+    </div>
+
+    <!-- Marker tool pane -->
+    <div id="pane-marker" hidden>
+      <div class="hint">Click the map to drop a new marker, or click an existing marker to edit it.</div>
+
+      <form id="marker-form" style="margin-top:14px; display:none;">
+        <span class="field-label">Location name</span>
+        <input type="text" id="m-name" placeholder="e.g. Flinders St Station concourse">
+
+        <span class="field-label">Technology type</span>
+        <select id="m-type">
+          <option value="myki">Myki / transit</option>
+          <option value="cctv">CCTV</option>
+          <option value="pedestrian">Pedestrian sensor</option>
+          <option value="jcdecaux">JCDecaux / advertising screen</option>
+          <option value="wifi">WiFi / other</option>
+        </select>
+
+        <span class="field-label">Operator</span>
+        <input type="text" id="m-operator" placeholder="e.g. PTV, Council, JCDecaux">
+
+        <span class="field-label">Description (what data it collects)</span>
+        <textarea id="m-desc" placeholder="Brief description..."></textarea>
+
+        <span class="field-label">Photo</span>
+        <div class="photo-drop" id="m-photo-drop" tabindex="0">
+          <img class="photo-preview" id="m-photo-preview" hidden>
+          <div class="photo-drop-placeholder" id="m-photo-placeholder">Click to choose a file, or paste an image (Ctrl/Cmd+V)</div>
+        </div>
+        <input type="file" id="m-photo" accept="image/*" style="display:none;">
+
+        <div class="form-actions">
+          <button type="button" class="btn" id="marker-cancel-btn">Cancel</button>
+          <button type="button" class="btn btn-danger" id="marker-delete-btn" hidden>Delete</button>
+          <button type="button" class="btn btn-primary" id="marker-save-btn">Save</button>
+        </div>
+      </form>
+
+      <span class="field-label">All markers (<span id="marker-count">0</span>)</span>
+      <div id="marker-list"></div>
+    </div>
+
+  </div>
+</div>
+<button class="sidebar-toggle" id="admin-sidebar-toggle" hidden>◂</button>
+
+<!-- ================= Viewer sidebar ================= -->
+<div class="sidebar" id="viewer-sidebar" hidden>
+  <div class="sidebar-body">
+    <div class="legend-block">
+      <div class="legend-title">Route legend</div>
+      <div id="route-legend"></div>
+    </div>
+    <div class="legend-block">
+      <div class="legend-title">Infrastructure legend</div>
+      <div id="marker-legend"></div>
+    </div>
+    <div class="legend-block">
+      <div class="legend-title">All points</div>
+      <div id="viewer-marker-groups"></div>
+    </div>
+  </div>
+</div>
+<button class="sidebar-toggle" id="viewer-sidebar-toggle" hidden>◂</button>
+
+<!-- ================= Export / import modal ================= -->
+<div class="modal-overlay" id="data-modal" hidden>
+  <div class="modal-card">
+    <h1>Map data</h1>
+    <p class="sub">Copy the JSON below to back up your work, or paste the exported JSON from <code>DATA</code> at the top of the file to publish the final map. Import replaces all current data in this browser session.</p>
+    <div class="tabbar">
+      <button class="btn active" id="tab-export">Export</button>
+      <button class="btn" id="tab-import">Import</button>
+    </div>
+    <div class="panel-pane" id="pane-export">
+      <textarea id="export-text" readonly></textarea>
+      <div class="row" style="margin-top:10px;">
+        <button class="btn" id="copy-export-btn">Copy to clipboard</button>
+        <button class="btn" id="close-export-btn">Close</button>
+      </div>
+    </div>
+    <div class="panel-pane" id="pane-import" hidden>
+      <textarea id="import-text" placeholder="Paste exported JSON here..."></textarea>
+      <div class="row" style="margin-top:10px;">
+        <button class="btn btn-primary" id="apply-import-btn">Apply import</button>
+        <button class="btn" id="close-import-btn">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
+<script>
+(function(){
+"use strict";
+
+// Captured before any script below touches the DOM: the pristine, as-shipped
+// markup of this exact file. "Export viewer HTML" reuses this as a template
+// to produce a standalone, login-free copy of the page — see exportViewerHtml().
+var PAGE_TEMPLATE = "<!DOCTYPE html>\n" + document.documentElement.outerHTML;
+
+/* ==========================================================================
+   CONFIG
+   ========================================================================== */
+var ADMIN_PASSWORD = "surveillance2024"; // change before deploying
+
+// Flipped to true only inside a file generated by "Export viewer HTML" — when
+// true, the page skips the password modal entirely and boots straight into
+// read-only viewer mode. Leave this false in the source/admin copy.
+var VIEWER_ONLY_BUILD = false;
+if(VIEWER_ONLY_BUILD){
+  // Hide synchronously (not on DOMContentLoaded) so there's no flash of the modal.
+  document.getElementById("entry-modal").hidden = true;
+}
+
+var MODE_PRESETS = {
+  walking:  { label:"Walking", color:"#ecf0f1" },
+  tram:     { label:"Tram",    color:"#2ecc71" },
+  train:    { label:"Train",   color:"#3498db" },
+  other:    { label:"Other",   color:"#f39c12" }
+};
+
+var CATEGORY_META = {
+  myki:       { label:"Myki / transit",          color:"#2ecc71", icon:"🚋" },
+  cctv:       { label:"CCTV",                     color:"#e74c3c", icon:"📹" },
+  pedestrian: { label:"Pedestrian sensor",        color:"#f39c12", icon:"🚶" },
+  jcdecaux:   { label:"JCDecaux / advertising",   color:"#9b59b6", icon:"📺" },
+  wifi:       { label:"WiFi / other",             color:"#3498db", icon:"📶" }
+};
+
+// Tiny placeholder thumbnails (self-contained SVG data URIs) used by the
+// sample data below. Replace with real photos captured via the admin
+// marker tool, which compresses uploads to base64 JPEG automatically.
+function placeholderPhoto(bg, emoji){
+  var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300">' +
+    '<rect width="400" height="300" fill="' + bg + '"/>' +
+    '<text x="200" y="175" font-size="120" text-anchor="middle" font-family="sans-serif">' + emoji + '</text>' +
+    '</svg>';
+  // btoa() only accepts Latin1 — escape to UTF-8 bytes first so emoji glyphs don't throw.
+  return "data:image/svg+xml;base64," + btoa(unescape(encodeURIComponent(svg)));
+}
+
+/* ==========================================================================
+   DATA — paste an admin export here (between the markers below) to publish
+   a finished map. This sample data demonstrates the format.
+   ========================================================================== */
+var DATA = /* PASTE_EXPORTED_JSON_HERE_START */ {
+  "segments": [
+    {
+      "id": "seg-sample-1",
+      "mode": "walking",
+      "color": "#ecf0f1",
+      "points": [
+        [-37.8183, 144.9671],
+        [-37.8163, 144.9661],
+        [-37.8136, 144.9648]
+      ]
+    },
+    {
+      "id": "seg-sample-2",
+      "mode": "tram",
+      "color": "#2ecc71",
+      "points": [
+        [-37.8136, 144.9648],
+        [-37.8143, 144.9613],
+        [-37.8149, 144.9578]
+      ]
+    }
+  ],
+  "markers": [
+    {
+      "id": "mk-sample-1",
+      "lat": -37.8183, "lng": 144.9671,
+      "name": "Flinders Street Station concourse",
+      "type": "myki",
+      "operator": "PTV / Myki",
+      "description": "Myki gate readers log tap-on/tap-off events, timestamp and card ID, building a travel history tied to the card.",
+      "photo": ""
+    },
+    {
+      "id": "mk-sample-2",
+      "lat": -37.8163, "lng": 144.9661,
+      "name": "Bourke Street Mall",
+      "type": "cctv",
+      "operator": "City of Melbourne",
+      "description": "Council CCTV covering the mall for safety and crowd monitoring; continuous video recording retained for a fixed period.",
+      "photo": ""
+    },
+    {
+      "id": "mk-sample-3",
+      "lat": -37.8136, "lng": 144.9648,
+      "name": "Melbourne Central forecourt",
+      "type": "jcdecaux",
+      "operator": "JCDecaux",
+      "description": "Digital advertising screen with an embedded audience-measurement camera estimating viewer count, age range and dwell time.",
+      "photo": ""
+    },
+    {
+      "id": "mk-sample-4",
+      "lat": -37.8143, "lng": 144.9613,
+      "name": "Swanston St / La Trobe St",
+      "type": "pedestrian",
+      "operator": "City of Melbourne",
+      "description": "Pedestrian counting sensor recording anonymised footfall counts by direction and time of day.",
+      "photo": ""
+    },
+    {
+      "id": "mk-sample-5",
+      "lat": -37.8149, "lng": 144.9578,
+      "name": "State Library forecourt",
+      "type": "wifi",
+      "operator": "Unknown / free WiFi vendor",
+      "description": "Free public WiFi access point; connecting devices' MAC addresses and browsing metadata may be logged by the operator.",
+      "photo": ""
+    }
+  ]
+} /* PASTE_EXPORTED_JSON_HERE_END */;
+
+// Fill in placeholder photos for any sample marker without one.
+(function fillPlaceholders(){
+  var colors = { myki:"#1a5c33", cctv:"#5c1a1a", pedestrian:"#5c3d0a", jcdecaux:"#3a1a5c", wifi:"#123a5c" };
+  DATA.markers.forEach(function(m){
+    if(!m.photo){ m.photo = placeholderPhoto(colors[m.type] || "#222", CATEGORY_META[m.type] ? CATEGORY_META[m.type].icon : "❓"); }
+  });
+})();
+
+// Fills in fields that older saved data (from before a feature existed) won't
+// have yet, so loading an old data.json/export never throws on a missing key.
+function normalizeData(){
+  if(DATA.startSign === undefined) DATA.startSign = null;
+  if(DATA.endSign === undefined) DATA.endSign = null;
+}
+normalizeData();
+
+/* ==========================================================================
+   STATE
+   ========================================================================== */
+var isAdmin = false;
+var map;
+var tileLayer;
+var segLayers = {};   // id -> {polyline, vertexMarkers:[]}
+var markerLayers = {}; // id -> L.marker
+var signLayers = { start: null, end: null }; // L.marker | null
+var activeTool = "route"; // 'route' | 'marker'
+var drawing = false;
+var currentPoints = [];
+var currentPolyline = null;
+var currentVertexMarkers = [];
+var clickTimer = null;
+var editingMarkerId = null; // when set, marker-form edits this marker
+var pendingMarkerLatLng = null; // when adding a new marker before save
+
+var LS_KEY = "cityTraceMapData_v1";
+
+// File System Access API state — lets admin mode auto-save straight to a
+// data.json on disk instead of relying on localStorage. Chrome/Edge only.
+var FS_ACCESS_SUPPORTED = !!(window.showOpenFilePicker && window.showSaveFilePicker);
+var dataFileHandle = null;
+var dataFileStatus = "disconnected"; // 'disconnected' | 'connected' | 'needs-permission' | 'unsupported'
+
+/* ==========================================================================
+   UTIL
+   ========================================================================== */
+function uid(prefix){ return prefix + "-" + Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
+function $(sel){ return document.querySelector(sel); }
+function $all(sel){ return Array.prototype.slice.call(document.querySelectorAll(sel)); }
+function escapeHtml(s){
+  return String(s == null ? "" : s).replace(/[&<>"']/g, function(c){
+    return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];
+  });
+}
+function toast(msg){
+  var t = $("#toast");
+  t.textContent = msg;
+  t.classList.add("show");
+  clearTimeout(toast._h);
+  toast._h = setTimeout(function(){ t.classList.remove("show"); }, 2200);
+}
+function saveLocal(){
+  try{ localStorage.setItem(LS_KEY, JSON.stringify(DATA)); }catch(e){}
+}
+function loadLocal(){
+  try{
+    var raw = localStorage.getItem(LS_KEY);
+    if(raw){
+      var parsed = JSON.parse(raw);
+      if(parsed && Array.isArray(parsed.segments) && Array.isArray(parsed.markers)){
+        DATA = parsed;
+        normalizeData();
+      }
+    }
+  }catch(e){}
+}
+
+/* ==========================================================================
+   DATA FILE (File System Access API)
+   Lets admin mode connect a real data.json on disk once per session, then
+   auto-saves every change straight to it. Chrome/Edge only — everything
+   here degrades quietly to the localStorage/export flow otherwise. The
+   picked file handle is remembered in IndexedDB so future sessions only
+   need a one-click permission re-grant, not a full re-browse.
+   ========================================================================== */
+var IDB_NAME = "cityTraceMapDB";
+var IDB_STORE = "handles";
+var IDB_KEY = "dataFileHandle";
+
+function idbOpen(){
+  return new Promise(function(resolve, reject){
+    var req = indexedDB.open(IDB_NAME, 1);
+    req.onupgradeneeded = function(){ req.result.createObjectStore(IDB_STORE); };
+    req.onsuccess = function(){ resolve(req.result); };
+    req.onerror = function(){ reject(req.error); };
+  });
+}
+function idbGet(key){
+  return idbOpen().then(function(db){
+    return new Promise(function(resolve, reject){
+      var tx = db.transaction(IDB_STORE, "readonly");
+      var req = tx.objectStore(IDB_STORE).get(key);
+      req.onsuccess = function(){ resolve(req.result || null); };
+      req.onerror = function(){ reject(req.error); };
+    });
+  });
+}
+function idbSet(key, value){
+  return idbOpen().then(function(db){
+    return new Promise(function(resolve, reject){
+      var tx = db.transaction(IDB_STORE, "readwrite");
+      tx.objectStore(IDB_STORE).put(value, key);
+      tx.oncomplete = function(){ resolve(); };
+      tx.onerror = function(){ reject(tx.error); };
+    });
+  });
+}
+
+function updateDataFileUI(){
+  var dot = $("#datafile-dot");
+  var status = $("#datafile-status");
+  var connectBtn = $("#datafile-connect-btn");
+  var newBtn = $("#datafile-new-btn");
+  if(!dot) return; // admin sidebar not built yet
+  dot.className = "datafile-dot" + (dataFileStatus === "disconnected" ? "" : " " + dataFileStatus);
+  if(dataFileStatus === "unsupported"){
+    status.textContent = "Auto-save needs Chrome or Edge";
+    connectBtn.hidden = true;
+    newBtn.hidden = true;
+  }else if(dataFileStatus === "connected"){
+    status.textContent = "Saving to " + dataFileHandle.name;
+    connectBtn.textContent = "Change file";
+    connectBtn.hidden = false;
+    newBtn.hidden = true;
+  }else if(dataFileStatus === "needs-permission"){
+    status.textContent = "Reconnect to " + dataFileHandle.name;
+    connectBtn.textContent = "Reconnect";
+    connectBtn.hidden = false;
+    newBtn.hidden = true;
+  }else{
+    status.textContent = "Not connected — edits stay in this browser only";
+    connectBtn.textContent = "Connect";
+    connectBtn.hidden = false;
+    newBtn.hidden = false;
+  }
+}
+
+// Loads DATA from an already-permitted handle and starts using it for saves.
+async function useDataFileHandle(handle, loadFromFile){
+  dataFileHandle = handle;
+  if(loadFromFile){
+    try{
+      var file = await handle.getFile();
+      var text = await file.text();
+      var parsed = JSON.parse(text);
+      if(parsed && Array.isArray(parsed.segments) && Array.isArray(parsed.markers)){
+        DATA = parsed;
+        normalizeData();
+        renderAllSegments();
+        renderAllMarkers(isAdmin);
+        refreshSegmentList();
+        refreshMarkerList();
+        renderSign("start");
+        renderSign("end");
+        saveLocal();
+      }else{
+        toast(handle.name + " doesn't look like a city-trace-map data file");
+      }
+    }catch(e){
+      toast("Couldn't read " + handle.name + ": " + e.message);
+    }
+  }
+  dataFileStatus = "connected";
+  updateDataFileUI();
+  try{ await idbSet(IDB_KEY, handle); }catch(e){}
+}
+
+async function connectDataFile(){
+  if(!FS_ACCESS_SUPPORTED){ toast("File auto-save needs Chrome or Edge"); return; }
+  try{
+    var handles = await window.showOpenFilePicker({
+      types: [{ description: "JSON data file", accept: { "application/json": [".json"] } }],
+      excludeAcceptAllOption: false,
+      multiple: false
+    });
+    await useDataFileHandle(handles[0], true);
+    toast("Connected to " + handles[0].name);
+  }catch(e){
+    if(e.name !== "AbortError") toast("Couldn't open file: " + e.message);
+  }
+}
+
+async function createDataFile(){
+  if(!FS_ACCESS_SUPPORTED){ toast("File auto-save needs Chrome or Edge"); return; }
+  try{
+    var handle = await window.showSaveFilePicker({
+      suggestedName: "data.json",
+      types: [{ description: "JSON data file", accept: { "application/json": [".json"] } }]
+    });
+    await useDataFileHandle(handle, false); // new/blank file — keep current DATA, don't try to parse it
+    await saveDataFile();
+    toast("Created " + handle.name);
+  }catch(e){
+    if(e.name !== "AbortError") toast("Couldn't create file: " + e.message);
+  }
+}
+
+async function grantDataFilePermission(){
+  if(!dataFileHandle) return;
+  try{
+    var perm = await dataFileHandle.requestPermission({ mode: "readwrite" });
+    if(perm === "granted"){
+      await useDataFileHandle(dataFileHandle, true);
+      toast("Reconnected to " + dataFileHandle.name);
+    }else{
+      toast("Permission denied");
+    }
+  }catch(e){
+    toast("Couldn't reconnect: " + e.message);
+  }
+}
+
+// Called on entering admin mode: silently resumes a remembered file if
+// permission is still granted, otherwise leaves a one-click prompt.
+async function tryReconnectDataFile(){
+  if(!FS_ACCESS_SUPPORTED){ dataFileStatus = "unsupported"; updateDataFileUI(); return; }
+  try{
+    var handle = await idbGet(IDB_KEY);
+    if(!handle){ dataFileStatus = "disconnected"; updateDataFileUI(); return; }
+    dataFileHandle = handle;
+    var perm = await handle.queryPermission({ mode: "readwrite" });
+    if(perm === "granted"){
+      await useDataFileHandle(handle, true);
+    }else{
+      dataFileStatus = "needs-permission";
+      updateDataFileUI();
+    }
+  }catch(e){
+    dataFileStatus = "disconnected";
+    updateDataFileUI();
+  }
+}
+
+// The single save path every mutation should call: always mirrors to
+// localStorage as a cheap safety net, and additionally writes straight to
+// the connected file on disk when one is connected.
+async function saveDataFile(){
+  saveLocal();
+  if(!dataFileHandle || dataFileStatus !== "connected") return;
+  try{
+    var writable = await dataFileHandle.createWritable();
+    await writable.write(JSON.stringify(DATA, null, 2));
+    await writable.close();
+  }catch(e){
+    toast("Auto-save to " + dataFileHandle.name + " failed: " + e.message);
+  }
+}
+
+/* ==========================================================================
+   ENTRY / MODE HANDLING
+   ========================================================================== */
+document.addEventListener("DOMContentLoaded", function(){
+  if(VIEWER_ONLY_BUILD){
+    // No localStorage overlay here — the baked-in DATA below is the single
+    // source of truth for a distributed viewer file. Straight to the map,
+    // no password prompt.
+    enterMode(false);
+  }else{
+    loadLocal();
+    wireEntryModal();
+  }
+});
+
+function wireEntryModal(){
+  $("#admin-btn").addEventListener("click", tryAdminEntry);
+  $("#viewer-btn").addEventListener("click", function(){ enterMode(false); });
+  $("#password-input").addEventListener("keydown", function(e){
+    if(e.key === "Enter") tryAdminEntry();
+  });
+}
+function tryAdminEntry(){
+  var val = $("#password-input").value;
+  if(val === ADMIN_PASSWORD){
+    enterMode(true);
+  }else{
+    $("#password-error").textContent = "Incorrect password.";
+  }
+}
+function enterMode(admin){
+  isAdmin = admin;
+  $("#entry-modal").hidden = true;
+  $("#topbar").hidden = false;
+  $("#mode-badge").textContent = admin ? "Admin" : "Viewer";
+  $("#mode-badge").className = admin ? "mode-admin" : "mode-viewer";
+  buildTopbarActions();
+  initMap();
+  if(admin){
+    $("#admin-sidebar").hidden = false;
+    $("#admin-sidebar-toggle").hidden = false;
+    wireAdminUI();
+    setActiveTool("route");
+    updateDataFileUI();
+    tryReconnectDataFile();
+  }else{
+    $("#viewer-sidebar").hidden = false;
+    $("#viewer-sidebar-toggle").hidden = false;
+    wireViewerSidebarToggle();
+    renderViewerSidebar();
+    map.doubleClickZoom.enable();
+  }
+  renderAllSegments();
+  renderAllMarkers(admin);
+  renderSign("start");
+  renderSign("end");
+}
+function buildTopbarActions(){
+  var wrap = $("#topbar-actions");
+  wrap.innerHTML = "";
+  if(isAdmin){
+    var downloadBtn = document.createElement("button");
+    downloadBtn.className = "btn btn-primary btn-sm";
+    downloadBtn.innerHTML = "<span class=\"full\">Download viewer HTML</span><span class=\"short\">Viewer HTML</span>";
+    downloadBtn.title = "Save a standalone copy of this map for sharing — opens straight to the map, no password.";
+    downloadBtn.addEventListener("click", exportViewerHtml);
+    wrap.appendChild(downloadBtn);
+
+    var exportBtn = document.createElement("button");
+    exportBtn.className = "btn btn-sm";
+    exportBtn.innerHTML = "<span class=\"full\">Export data (JSON)</span><span class=\"short\">JSON</span>";
+    exportBtn.title = "View/copy the raw data JSON — for backups or hand-editing.";
+    exportBtn.addEventListener("click", openExportModal);
+    wrap.appendChild(exportBtn);
+
+    var previewBtn = document.createElement("button");
+    previewBtn.className = "btn btn-sm";
+    previewBtn.textContent = "Preview as viewer";
+    previewBtn.addEventListener("click", function(){
+      isAdmin = false;
+      $("#mode-badge").textContent = "Viewer";
+      $("#mode-badge").className = "mode-viewer";
+      $("#admin-sidebar").hidden = true;
+      $("#admin-sidebar-toggle").hidden = true;
+      $("#viewer-sidebar").hidden = false;
+      $("#viewer-sidebar-toggle").hidden = false;
+      wireViewerSidebarToggle();
+      renderViewerSidebar();
+      renderAllMarkers(false);
+      renderAllSegments();
+      renderSign("start");
+      renderSign("end");
+      cancelDrawing();
+      map.doubleClickZoom.enable();
+      buildTopbarActions();
+      toast("Previewing as viewer");
+    });
+    wrap.appendChild(previewBtn);
+  }else{
+    var badge = document.createElement("span");
+    badge.style.cssText = "font-size:11px;color:var(--text-dim);background:rgba(20,23,28,0.85);border:1px solid var(--border);padding:8px 10px;border-radius:8px;";
+    badge.textContent = "Read-only view";
+    wrap.appendChild(badge);
+  }
+}
+
+/* ==========================================================================
+   MAP INIT
+   ========================================================================== */
+function initMap(){
+  if(map) return;
+  map = L.map("map", { zoomControl:true, doubleClickZoom:false, minZoom:11, maxZoom:19 })
+    .setView([-37.8136, 144.9631], 15);
+  // NOTE: CARTO's free anonymous Dark Matter raster tiles now require an API key
+  // (the old {s}.basemaps.cartocdn.com/dark_all endpoint stamps an "API KEY
+  // REQUIRED" watermark across every tile without one). Esri's World Dark Gray
+  // Canvas is a genuinely free, no-key basemap with the same dark, low-detail
+  // aesthetic. If you have a CARTO API key, swap the URL/options below for
+  // "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png?api_key=YOUR_KEY".
+  tileLayer = L.tileLayer("https://services.arcgisonline.com/arcgis/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}", {
+    attribution: '&copy; <a href="https://www.esri.com">Esri</a>, HERE, Garmin, FAO, NOAA, USGS',
+    maxZoom: 19,
+    maxNativeZoom: 16
+  }).addTo(map);
+  map.on("click", onMapClick);
+  map.on("dblclick", onMapDblClick);
+}
+
+/* ==========================================================================
+   ROUTE BUILDER
+   ========================================================================== */
+function onMapClick(e){
+  if(!isAdmin) return;
+  if(activeTool !== "route") return;
+  if(clickTimer) clearTimeout(clickTimer);
+  var latlng = e.latlng;
+  clickTimer = setTimeout(function(){
+    addVertexToCurrentSegment(latlng);
+    clickTimer = null;
+  }, 250);
+}
+function onMapDblClick(){
+  if(!isAdmin || activeTool !== "route") return;
+  if(clickTimer){ clearTimeout(clickTimer); clickTimer = null; }
+  finishSegment();
+}
+function currentModeInfo(){
+  var mode = $("#mode-select").value;
+  var color = $("#mode-color").value;
+  return { mode: mode, color: color };
+}
+function addVertexToCurrentSegment(latlng){
+  if(!drawing){
+    drawing = true;
+    currentPoints = [];
+    var info = currentModeInfo();
+    currentPolyline = L.polyline([], { color: info.color, weight:5, opacity:0.9, interactive:false }).addTo(map);
+    currentVertexMarkers = [];
+  }
+  currentPoints.push([latlng.lat, latlng.lng]);
+  currentPolyline.setLatLngs(currentPoints);
+  var vm = L.circleMarker(latlng, { radius:6, interactive:false, color:"#222", weight:2, fillColor:"#fff", fillOpacity:1 }).addTo(map);
+  currentVertexMarkers.push(vm);
+}
+function finishSegment(){
+  if(!drawing || currentPoints.length < 2){
+    cancelDrawing();
+    toast("Segment needs at least 2 points");
+    return;
+  }
+  var info = currentModeInfo();
+  var seg = { id: uid("seg"), mode: info.mode, color: info.color, points: currentPoints.slice() };
+  DATA.segments.push(seg);
+  // clean up temp layers
+  currentVertexMarkers.forEach(function(vm){ map.removeLayer(vm); });
+  map.removeLayer(currentPolyline);
+  drawing = false;
+  currentPoints = [];
+  currentPolyline = null;
+  currentVertexMarkers = [];
+  renderSegment(seg);
+  refreshSegmentList();
+  saveDataFile();
+  toast("Segment added");
+}
+function cancelDrawing(){
+  if(currentPolyline) map.removeLayer(currentPolyline);
+  currentVertexMarkers.forEach(function(vm){ map.removeLayer(vm); });
+  drawing = false;
+  currentPoints = [];
+  currentPolyline = null;
+  currentVertexMarkers = [];
+}
+function deleteLastSegment(){
+  if(DATA.segments.length === 0){ toast("No segments to delete"); return; }
+  var seg = DATA.segments.pop();
+  removeSegmentLayers(seg.id);
+  refreshSegmentList();
+  saveDataFile();
+  toast("Deleted last segment");
+}
+function removeSegmentLayers(id){
+  var l = segLayers[id];
+  if(!l) return;
+  map.removeLayer(l.polyline);
+  l.vertexMarkers.forEach(function(vm){ map.removeLayer(vm); });
+  delete segLayers[id];
+}
+function renderAllSegments(){
+  Object.keys(segLayers).forEach(removeSegmentLayers);
+  DATA.segments.forEach(renderSegment);
+  refreshSegmentList();
+}
+function renderSegment(seg){
+  removeSegmentLayers(seg.id);
+  var latlngs = seg.points.map(function(p){ return L.latLng(p[0], p[1]); });
+  var polyline = L.polyline(latlngs, { color: seg.color, weight:5, opacity:0.85, interactive:false }).addTo(map);
+  var vertexMarkers = [];
+  if(isAdmin){
+    latlngs.forEach(function(ll, idx){
+      var vm = L.marker(ll, {
+        draggable:true,
+        icon: L.divIcon({ className:"", html:'<div class="vertex-handle"></div>', iconSize:[12,12], iconAnchor:[6,6] })
+      }).addTo(map);
+      vm.on("drag", function(e){
+        seg.points[idx] = [e.target.getLatLng().lat, e.target.getLatLng().lng];
+        polyline.setLatLngs(seg.points.map(function(p){ return L.latLng(p[0], p[1]); }));
+      });
+      vm.on("dragend", function(){ saveDataFile(); });
+      vertexMarkers.push(vm);
+    });
+  }
+  segLayers[seg.id] = { polyline: polyline, vertexMarkers: vertexMarkers };
+}
+function refreshSegmentList(){
+  $("#segment-count").textContent = DATA.segments.length;
+  var wrap = $("#segment-list");
+  wrap.innerHTML = "";
+  DATA.segments.forEach(function(seg, i){
+    var preset = MODE_PRESETS[seg.mode] || MODE_PRESETS.other;
+    var div = document.createElement("div");
+    div.className = "seg-item";
+    div.innerHTML =
+      '<div class="swatch" style="background:' + seg.color + '"></div>' +
+      '<div class="meta"><div class="t1">' + escapeHtml(preset.label) + ' #' + (i+1) + '</div>' +
+      '<div class="t2">' + seg.points.length + ' points</div></div>';
+    wrap.appendChild(div);
+  });
+}
+
+/* ==========================================================================
+   MARKER TOOL
+   ========================================================================== */
+function wireAdminUI(){
+  $("#tab-route").addEventListener("click", function(){ setActiveTool("route"); });
+  $("#tab-marker").addEventListener("click", function(){ setActiveTool("marker"); });
+
+  $("#mode-select").addEventListener("change", function(){
+    $("#mode-color").value = MODE_PRESETS[$("#mode-select").value].color;
+  });
+  $("#mode-color").value = MODE_PRESETS.walking.color;
+
+  $("#finish-segment-btn").addEventListener("click", finishSegment);
+  $("#delete-last-segment-btn").addEventListener("click", deleteLastSegment);
+
+  ["start", "end"].forEach(function(kind){
+    $("#sign-chip-" + kind).addEventListener("dragstart", function(e){
+      e.dataTransfer.setData("text/plain", kind);
+      e.dataTransfer.effectAllowed = "move";
+    });
+  });
+  var mapEl = $("#map");
+  mapEl.addEventListener("dragover", function(e){
+    if(Array.prototype.indexOf.call(e.dataTransfer.types, "text/plain") === -1) return;
+    e.preventDefault(); // required to allow a drop
+    e.dataTransfer.dropEffect = "move";
+  });
+  mapEl.addEventListener("drop", function(e){
+    var kind = e.dataTransfer.getData("text/plain");
+    if(kind !== "start" && kind !== "end") return;
+    e.preventDefault();
+    placeSign(kind, map.mouseEventToLatLng(e));
+  });
+  updateSignChips();
+
+  $("#marker-cancel-btn").addEventListener("click", closeMarkerForm);
+  $("#marker-save-btn").addEventListener("click", saveMarkerForm);
+  $("#marker-delete-btn").addEventListener("click", deleteCurrentMarker);
+  $("#m-photo").addEventListener("change", handlePhotoUpload);
+  $("#m-photo-drop").addEventListener("click", function(){ $("#m-photo").click(); });
+  $("#m-photo-drop").addEventListener("keydown", function(e){
+    if(e.key === "Enter" || e.key === " "){ e.preventDefault(); $("#m-photo").click(); }
+  });
+  // Paste an image (Ctrl/Cmd+V) anywhere while the marker form is open — doesn't
+  // interfere with pasting text into the name/operator/description fields.
+  document.addEventListener("paste", function(e){
+    if($("#marker-form").style.display === "none") return;
+    var items = (e.clipboardData && e.clipboardData.items) || [];
+    for(var i = 0; i < items.length; i++){
+      if(items[i].type && items[i].type.indexOf("image/") === 0){
+        var blob = items[i].getAsFile();
+        if(blob){
+          e.preventDefault();
+          compressImage(blob, 800, applyPhotoPreview);
+          toast("Image pasted");
+        }
+        break;
+      }
+    }
+  });
+
+  $("#admin-sidebar-toggle").addEventListener("click", function(){
+    $("#admin-sidebar").classList.toggle("collapsed");
+  });
+
+  $("#datafile-connect-btn").addEventListener("click", function(){
+    if(dataFileStatus === "needs-permission") grantDataFilePermission();
+    else connectDataFile();
+  });
+  $("#datafile-new-btn").addEventListener("click", createDataFile);
+
+  $("#tab-export").addEventListener("click", function(){ switchDataTab("export"); });
+  $("#tab-import").addEventListener("click", function(){ switchDataTab("import"); });
+  $("#copy-export-btn").addEventListener("click", copyExportText);
+  $("#close-export-btn").addEventListener("click", closeDataModal);
+  $("#close-import-btn").addEventListener("click", closeDataModal);
+  $("#apply-import-btn").addEventListener("click", applyImport);
+}
+// Switches the visible tab/pane only — does not touch drawing state or the marker form.
+function switchToolTab(tool){
+  activeTool = tool;
+  $("#tab-route").classList.toggle("active", tool === "route");
+  $("#tab-marker").classList.toggle("active", tool === "marker");
+  $("#pane-route").hidden = tool !== "route";
+  $("#pane-marker").hidden = tool !== "marker";
+}
+// Full tool switch triggered by the tab buttons: cancels in-progress drawing/editing first.
+function setActiveTool(tool){
+  cancelDrawing();
+  closeMarkerForm();
+  switchToolTab(tool);
+}
+function onMarkerClickAdmin(m){
+  cancelDrawing();
+  switchToolTab("marker");
+  editingMarkerId = m.id;
+  pendingMarkerLatLng = null;
+  $("#m-name").value = m.name || "";
+  $("#m-type").value = m.type || "cctv";
+  $("#m-operator").value = m.operator || "";
+  $("#m-desc").value = m.description || "";
+  $("#m-photo").value = "";
+  $("#m-photo-preview").dataset.pending = "";
+  if(m.photo){
+    $("#m-photo-preview").src = m.photo;
+    $("#m-photo-preview").hidden = false;
+    $("#m-photo-placeholder").hidden = true;
+  }else{
+    $("#m-photo-preview").removeAttribute("src");
+    $("#m-photo-preview").hidden = true;
+    $("#m-photo-placeholder").hidden = false;
+  }
+  $("#marker-form").style.display = "block";
+  $("#marker-delete-btn").hidden = false;
+}
+function onMapClickForMarker(latlng){
+  cancelDrawing();
+  switchToolTab("marker");
+  editingMarkerId = null;
+  pendingMarkerLatLng = latlng;
+  $("#m-name").value = "";
+  $("#m-type").value = "cctv";
+  $("#m-operator").value = "";
+  $("#m-desc").value = "";
+  $("#m-photo").value = "";
+  $("#m-photo-preview").dataset.pending = "";
+  $("#m-photo-preview").removeAttribute("src");
+  $("#m-photo-preview").hidden = true;
+  $("#m-photo-placeholder").hidden = false;
+  $("#marker-form").style.display = "block";
+  $("#marker-delete-btn").hidden = true;
+}
+function closeMarkerForm(){
+  editingMarkerId = null;
+  pendingMarkerLatLng = null;
+  $("#marker-form").style.display = "none";
+}
+function handlePhotoUpload(e){
+  var file = e.target.files && e.target.files[0];
+  if(!file) return;
+  compressImage(file, 800, applyPhotoPreview);
+}
+function applyPhotoPreview(dataUrl){
+  $("#m-photo-preview").src = dataUrl;
+  $("#m-photo-preview").hidden = false;
+  $("#m-photo-preview").dataset.pending = dataUrl;
+  $("#m-photo-placeholder").hidden = true;
+}
+function compressImage(file, maxWidth, cb){
+  var reader = new FileReader();
+  reader.onload = function(evt){
+    var img = new Image();
+    img.onload = function(){
+      var scale = Math.min(1, maxWidth / img.width);
+      var w = Math.round(img.width * scale);
+      var h = Math.round(img.height * scale);
+      var canvas = document.createElement("canvas");
+      canvas.width = w; canvas.height = h;
+      var ctx = canvas.getContext("2d");
+      ctx.drawImage(img, 0, 0, w, h);
+      cb(canvas.toDataURL("image/jpeg", 0.8));
+    };
+    img.src = evt.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+function saveMarkerForm(){
+  var name = $("#m-name").value.trim();
+  if(!name){ toast("Location name is required"); return; }
+  var photo = $("#m-photo-preview").dataset.pending || $("#m-photo-preview").src || "";
+  if($("#m-photo-preview").hidden) photo = "";
+
+  if(editingMarkerId){
+    var m = DATA.markers.find(function(x){ return x.id === editingMarkerId; });
+    if(m){
+      m.name = name;
+      m.type = $("#m-type").value;
+      m.operator = $("#m-operator").value.trim();
+      m.description = $("#m-desc").value.trim();
+      if(photo) m.photo = photo;
+      renderMarker(m, true);
+    }
+  }else{
+    if(!pendingMarkerLatLng){ toast("Click the map to place the marker"); return; }
+    var newM = {
+      id: uid("mk"),
+      lat: pendingMarkerLatLng.lat,
+      lng: pendingMarkerLatLng.lng,
+      name: name,
+      type: $("#m-type").value,
+      operator: $("#m-operator").value.trim(),
+      description: $("#m-desc").value.trim(),
+      photo: photo
+    };
+    DATA.markers.push(newM);
+    renderMarker(newM, true);
+  }
+  saveDataFile();
+  refreshMarkerList();
+  closeMarkerForm();
+  toast("Marker saved");
+}
+function deleteCurrentMarker(){
+  if(!editingMarkerId) return;
+  DATA.markers = DATA.markers.filter(function(x){ return x.id !== editingMarkerId; });
+  removeMarkerLayer(editingMarkerId);
+  saveDataFile();
+  refreshMarkerList();
+  closeMarkerForm();
+  toast("Marker deleted");
+}
+function removeMarkerLayer(id){
+  var lyr = markerLayers[id];
+  if(lyr){ map.removeLayer(lyr); delete markerLayers[id]; }
+}
+function refreshMarkerList(){
+  $("#marker-count").textContent = DATA.markers.length;
+  var wrap = $("#marker-list");
+  wrap.innerHTML = "";
+  DATA.markers.forEach(function(m){
+    var meta = CATEGORY_META[m.type] || CATEGORY_META.wifi;
+    var div = document.createElement("div");
+    div.className = "marker-item";
+    div.innerHTML =
+      '<div class="dotcat" style="background:' + meta.color + '"></div>' +
+      '<div class="meta"><div class="t1">' + escapeHtml(m.name) + '</div>' +
+      '<div class="t2">' + escapeHtml(meta.label) + '</div></div>';
+    div.addEventListener("click", function(){
+      map.panTo([m.lat, m.lng]);
+      onMarkerClickAdmin(m);
+    });
+    wrap.appendChild(div);
+  });
+}
+
+/* ==========================================================================
+   MARKER RENDERING (shared admin/viewer)
+   ========================================================================== */
+function makeDivIcon(type){
+  var meta = CATEGORY_META[type] || CATEGORY_META.wifi;
+  var html = '<div class="pin" style="background:' + meta.color + '"><span class="pin-icon">' + meta.icon + '</span></div>';
+  return L.divIcon({ className:"", html: html, iconSize:[28,28], iconAnchor:[14,28], popupAnchor:[0,-26] });
+}
+function popupHtml(m){
+  var meta = CATEGORY_META[m.type] || CATEGORY_META.wifi;
+  var photoHtml = m.photo ? '<img src="' + m.photo + '" alt="">' : "";
+  return '<div class="popup-card">' +
+    photoHtml +
+    '<div class="p-title" style="margin-top:' + (m.photo ? '8px' : '0') + '">' + escapeHtml(m.name) + '</div>' +
+    '<div class="p-type" style="color:' + meta.color + '">' + escapeHtml(meta.label) + '</div>' +
+    (m.operator ? '<div class="p-operator">Operator: ' + escapeHtml(m.operator) + '</div>' : '') +
+    '<div class="p-desc">' + escapeHtml(m.description) + '</div>' +
+    '</div>';
+}
+function renderMarker(m, adminMode){
+  removeMarkerLayer(m.id);
+  var mk = L.marker([m.lat, m.lng], { icon: makeDivIcon(m.type) }).addTo(map);
+  mk.bindPopup(popupHtml(m), { maxWidth:240 });
+  if(adminMode){
+    mk.on("click", function(){ onMarkerClickAdmin(m); });
+  }else{
+    mk.on("mouseover", function(){ mk.openPopup(); });
+    mk.on("mouseout", function(){ mk.closePopup(); });
+    mk.on("click", function(){ mk.openPopup(); });
+  }
+  markerLayers[m.id] = mk;
+}
+function renderAllMarkers(adminMode){
+  Object.keys(markerLayers).forEach(removeMarkerLayer);
+  DATA.markers.forEach(function(m){ renderMarker(m, adminMode); });
+  refreshMarkerList();
+}
+
+/* ==========================================================================
+   START / END SIGNS
+   Two optional, freely-draggable markers for the overall route — placed by
+   dragging a chip from the sidebar onto the map, independent of segments.
+   ========================================================================== */
+var SIGN_META = {
+  start: { icon:"🚩", label:"Route start", className:"sign-pin-start" },
+  end:   { icon:"🏁", label:"Route finish", className:"sign-pin-end" }
+};
+function makeSignIcon(kind){
+  var meta = SIGN_META[kind];
+  var html = '<div class="sign-pin ' + meta.className + '">' + meta.icon + '</div>';
+  return L.divIcon({ className:"", html: html, iconSize:[34,34], iconAnchor:[17,17], popupAnchor:[0,-17] });
+}
+function renderSign(kind){
+  if(signLayers[kind]){ map.removeLayer(signLayers[kind]); signLayers[kind] = null; }
+  var pos = DATA[kind + "Sign"];
+  if(!pos) { updateSignChips(); return; }
+  var meta = SIGN_META[kind];
+  var mk = L.marker([pos.lat, pos.lng], { icon: makeSignIcon(kind), draggable: isAdmin }).addTo(map);
+  if(isAdmin){
+    mk.on("dragend", function(){
+      var ll = mk.getLatLng();
+      DATA[kind + "Sign"] = { lat: ll.lat, lng: ll.lng };
+      saveDataFile();
+    });
+    mk.on("click", function(){ removeSign(kind); });
+    mk.bindTooltip(meta.label + " — click to remove", { direction:"top", offset:[0,-14] });
+  }else{
+    mk.bindTooltip(meta.label, { direction:"top", offset:[0,-14], permanent:false });
+  }
+  signLayers[kind] = mk;
+  updateSignChips();
+}
+function placeSign(kind, latlng){
+  DATA[kind + "Sign"] = { lat: latlng.lat, lng: latlng.lng };
+  renderSign(kind);
+  saveDataFile();
+  toast(SIGN_META[kind].label + " placed");
+}
+function removeSign(kind){
+  DATA[kind + "Sign"] = null;
+  renderSign(kind);
+  saveDataFile();
+  toast(SIGN_META[kind].label + " removed");
+}
+function updateSignChips(){
+  var startChip = $("#sign-chip-start");
+  var endChip = $("#sign-chip-end");
+  if(!startChip) return; // admin sidebar not built yet
+  startChip.classList.toggle("placed", !!DATA.startSign);
+  endChip.classList.toggle("placed", !!DATA.endSign);
+}
+
+// route click-to-place-marker hooks into the shared map click handler
+var _origOnMapClick = onMapClick;
+onMapClick = function(e){
+  if(!isAdmin) return;
+  if(activeTool === "marker"){
+    onMapClickForMarker(e.latlng);
+    return;
+  }
+  _origOnMapClick(e);
+};
+
+/* ==========================================================================
+   VIEWER SIDEBAR
+   ========================================================================== */
+function wireViewerSidebarToggle(){
+  var btn = $("#viewer-sidebar-toggle");
+  btn.onclick = function(){ $("#viewer-sidebar").classList.toggle("collapsed"); };
+}
+function renderViewerSidebar(){
+  var routeLegend = $("#route-legend");
+  routeLegend.innerHTML = "";
+  var usedModes = {};
+  DATA.segments.forEach(function(s){ usedModes[s.mode + "|" + s.color] = s; });
+  Object.keys(usedModes).forEach(function(key){
+    var s = usedModes[key];
+    var preset = MODE_PRESETS[s.mode] || MODE_PRESETS.other;
+    var row = document.createElement("div");
+    row.className = "legend-row";
+    row.innerHTML = '<div class="legend-line" style="background:' + s.color + '"></div><div>' + escapeHtml(preset.label) + '</div>';
+    routeLegend.appendChild(row);
+  });
+  if(!Object.keys(usedModes).length){ routeLegend.innerHTML = '<div class="hint">No route segments yet.</div>'; }
+  ["start", "end"].forEach(function(kind){
+    if(!DATA[kind + "Sign"]) return;
+    var meta = SIGN_META[kind];
+    var row = document.createElement("div");
+    row.className = "legend-row";
+    row.innerHTML = '<div>' + meta.icon + '</div><div>' + escapeHtml(meta.label) + '</div>';
+    routeLegend.appendChild(row);
+  });
+
+  var markerLegend = $("#marker-legend");
+  markerLegend.innerHTML = "";
+  Object.keys(CATEGORY_META).forEach(function(key){
+    var meta = CATEGORY_META[key];
+    var row = document.createElement("div");
+    row.className = "legend-row";
+    row.innerHTML = '<div class="dotcat" style="background:' + meta.color + '"></div><div>' + escapeHtml(meta.label) + '</div>';
+    markerLegend.appendChild(row);
+  });
+
+  var groupsWrap = $("#viewer-marker-groups");
+  groupsWrap.innerHTML = "";
+  Object.keys(CATEGORY_META).forEach(function(type){
+    var items = DATA.markers.filter(function(m){ return m.type === type; });
+    if(!items.length) return;
+    var meta = CATEGORY_META[type];
+    var header = document.createElement("div");
+    header.className = "group-header";
+    header.innerHTML = '<div class="dotcat" style="background:' + meta.color + '"></div>' + escapeHtml(meta.label) + ' (' + items.length + ')';
+    groupsWrap.appendChild(header);
+    items.forEach(function(m){
+      var div = document.createElement("div");
+      div.className = "marker-item";
+      div.innerHTML = '<div class="dotcat" style="background:' + meta.color + '"></div><div class="meta"><div class="t1">' + escapeHtml(m.name) + '</div></div>';
+      div.addEventListener("click", function(){
+        map.panTo([m.lat, m.lng]);
+        var mk = markerLayers[m.id];
+        if(mk) mk.openPopup();
+      });
+      groupsWrap.appendChild(div);
+    });
+  });
+  if(!DATA.markers.length){ groupsWrap.innerHTML = '<div class="hint">No points recorded yet.</div>'; }
+}
+
+/* ==========================================================================
+   EXPORT / IMPORT
+   ========================================================================== */
+// Builds a standalone, login-free copy of this page: the pristine template
+// captured at load, with the current data baked in and the viewer-only flag
+// flipped on, then triggers a save-as download of it.
+function exportViewerHtml(){
+  var json = JSON.stringify(DATA, null, 2);
+  var html = replaceBetween(PAGE_TEMPLATE,
+    "/* PASTE_EXPORTED_JSON_HERE_START */", "/* PASTE_EXPORTED_JSON_HERE_END */",
+    json);
+  if(html === null){
+    toast("Export failed: couldn't locate the data block in the template");
+    return;
+  }
+  html = html.replace("var VIEWER_ONLY_BUILD = false;", "var VIEWER_ONLY_BUILD = true;");
+
+  var blob = new Blob([html], { type: "text/html" });
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement("a");
+  a.href = url;
+  a.download = "city-trace-map-viewer.html";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(function(){ URL.revokeObjectURL(url); }, 4000);
+  toast("Viewer HTML downloaded");
+}
+// Replaces everything strictly between two literal marker strings (both kept
+// in the output) with `replacement`. Returns null if either marker is missing.
+function replaceBetween(str, startTok, endTok, replacement){
+  var i = str.indexOf(startTok);
+  if(i === -1) return null;
+  var j = str.indexOf(endTok, i + startTok.length);
+  if(j === -1) return null;
+  return str.slice(0, i + startTok.length) + " " + replacement + " " + str.slice(j);
+}
+function openExportModal(){
+  $("#data-modal").hidden = false;
+  switchDataTab("export");
+  $("#export-text").value = JSON.stringify(DATA, null, 2);
+}
+function closeDataModal(){ $("#data-modal").hidden = true; }
+function switchDataTab(which){
+  $("#tab-export").classList.toggle("active", which === "export");
+  $("#tab-import").classList.toggle("active", which === "import");
+  $("#pane-export").hidden = which !== "export";
+  $("#pane-import").hidden = which !== "import";
+}
+function copyExportText(){
+  var ta = $("#export-text");
+  ta.select();
+  try{
+    document.execCommand("copy");
+    toast("Copied to clipboard");
+  }catch(e){
+    if(navigator.clipboard){
+      navigator.clipboard.writeText(ta.value).then(function(){ toast("Copied to clipboard"); });
+    }else{
+      toast("Copy failed — select and copy manually");
+    }
+  }
+}
+function applyImport(){
+  var raw = $("#import-text").value.trim();
+  if(!raw){ toast("Paste JSON first"); return; }
+  try{
+    var parsed = JSON.parse(raw);
+    if(!parsed || !Array.isArray(parsed.segments) || !Array.isArray(parsed.markers)){
+      throw new Error("Missing segments/markers arrays");
+    }
+    DATA = parsed;
+    normalizeData();
+    saveDataFile();
+    renderAllSegments();
+    renderAllMarkers(isAdmin);
+    renderSign("start");
+    renderSign("end");
+    if(!isAdmin) renderViewerSidebar();
+    closeDataModal();
+    toast("Data imported");
+  }catch(err){
+    toast("Invalid JSON: " + err.message);
+  }
+}
+
+})();
+</script>
+</body>
+</html>
