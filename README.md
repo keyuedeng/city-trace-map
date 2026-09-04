@@ -3,6 +3,13 @@
 A self-contained, single-file interactive map for documenting surveillance and
 tracking infrastructure encountered along a field research route in Melbourne.
 
+Built for a university assignment on planning a route from Southern Cross
+Station to Parkville that minimises the digital trace left behind. This map
+is the supporting field survey: the route actually walked/travelled, and the
+surveillance and tracking infrastructure (CCTV, Myki readers, JCDecaux
+screens, pedestrian sensors, WiFi) encountered and reasoned about along the
+way.
+
 Open [`index.html`](index.html) directly in a browser — no build step, no
 server, no dependencies beyond the CDN scripts it loads (Leaflet + the
 Leaflet.Draw CSS/JS, unused by default but included for future extension).
