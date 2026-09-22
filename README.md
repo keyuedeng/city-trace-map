@@ -95,6 +95,17 @@ data (JSON)** instead — its **Import** tab pastes JSON back in to load it
 into the current browser session, handy for iterating without hand-editing
 the source each time.
 
+### Live deployment (Vercel)
+
+This repo is connected to a Vercel project, deployed from [`site/index.html`](site/index.html)
+(see [`vercel.json`](vercel.json)) — a generated, viewer-only build with the
+current `data.json` baked in, kept separate from the admin `index.html` at
+the repo root so the live site never shows a password screen. To publish an
+update: regenerate `site/index.html` from the current `index.html` +
+`data.json` (same splice `exportViewerHtml()` does in-browser, just run
+ahead of time against these files), commit, and push — Vercel auto-deploys
+on push to `main`.
+
 ## Notes on the basemap
 
 CARTO's free anonymous "Dark Matter" raster tiles
